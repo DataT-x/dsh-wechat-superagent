@@ -34,8 +34,20 @@ const arg = (name, fallback) => {
 const repoName = arg('repo', 'dsh-wechat-superagent')
 const isPrivate = arg('private', 'false') === 'true'
 const branch = arg('branch', 'main')
-const message = arg('message', 'feat: 企业微信 superagent 插件（扫码接入 + 仓库守望 + 分级审批）\n\n'
-  + 'Co-Authored-By: Claude Code <noreply@anthropic.com>')
+const DEFAULT_MESSAGE = [
+  'feat: 企业微信 superagent 插件（扫码接入 + 仓库守望 + 分级审批）',
+  '',
+  '- 一键扫码创建企微机器人，凭据隔离存储',
+  '- 企微单聊/群聊消息路由进 DSH 会话，带上下文增强',
+  '- 14 类动作分级审批：提交/推送/强推/测试/构建/发布/部署/迁移/依赖/删文件/密钥',
+  '- 负责人二次审批 + 第二负责人双签 + 确认短语',
+  '- 模板卡片点按审批，按钮 key 带 HMAC 签名',
+  '- 本地 git / GitHub issue PR 守望，水位与冷却',
+  '- 324 项单测',
+  '',
+  'Co-Authored-By: Claude Code <noreply@anthropic.com>',
+].join(String.fromCharCode(10))
+const message = arg('message', DEFAULT_MESSAGE)
 
 function getToken() {
   if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN.trim()
