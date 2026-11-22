@@ -20,7 +20,14 @@ import { redactDeep } from '../core/redact.js'
 import { files, appendNdjson } from '../core/state.js'
 import { asLogger } from '../core/log.js'
 
-/** 已知的「必须审批」的工具类别（用于快速短路）。 */
+/**
+ * 只读工具白名单。
+ *
+ * ⚠️ 这里的「只读」指的是**不改变外部状态**，不等于「不敏感」：
+ * `read_file` 能读密钥文件，`web_fetch` 能把数据带出去。
+ * 所以这个白名单只跳过「动作分类」，**不跳过敏感路径检查**——
+ * 见 `prepareForReadOnly()`：命中密钥/凭据路径时仍然要审批。
+ */
 const READ_ONLY_TOOLS = new Set([
   'read_file', 'list_directory', 'glob', 'grep', 'search', 'file_read', 'read', 'ls', 'find',
   'todo_write', 'ask_user_question', 'web_search', 'web_fetch', 'list_subagent_models',
@@ -84,17 +91,23 @@ export class ApprovalGate {
     if (exec.agent === undefined) return next()
 
     const toolName = String(exec.name ?? '')
-    if (READ_ONLY_TOOLS.has(toolName)) return next()
+    const isReadOnly = READ_ONLY_TOOLS.has(toolName)
 
     const rules = mergeRules(config.rules)
     const cwd = safeCwd(exec.agent)
     let classification
     try {
+      // 只读工具也走分类：分类器认得「路径命中密钥文件」这类风险，
+      // 只是绝大多数读操作会落到 `read`（免审）。
       classification = classifyToolCall({ toolName, args: exec.args, rules, cwd })
     } catch (error) {
       // 分类失败 → fail-closed
       appendNdjson(files.audit(), { at: new Date().toISOString(), type: 'gate.classify.error', toolName, error: String(error?.message ?? error) })
       return { kind: 'deny', reason: `审批闸无法判定这次调用（${String(error?.message ?? error)}），已拒绝。` }
+    }
+    // 只读 + 未命中敏感路径 → 直接放行（这是绝大多数情况的快路径）
+    if (isReadOnly && !classification.needsApproval) {
+      return next()
     }
     // 兜底动作的动态风险
     if (classification.action === 'tool.exec') {

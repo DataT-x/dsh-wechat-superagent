@@ -53,8 +53,11 @@ export function extractPaths(toolName, args) {
   if (!args || typeof args !== 'object') return out
   const push = (v) => {
     if (typeof v !== 'string' || v.length === 0) return
-    // 只收看起来像路径的：含分隔符或扩展名
-    if (!/[\\/]/.test(v) && !/\.[A-Za-z0-9]{1,8}$/.test(v)) return
+    // 收三类：含分隔符的路径、带扩展名的文件名、以及"看起来像密钥文件名"的裸名
+    // （`id_rsa` / `secrets` / `credentials` 这类没有扩展名但极敏感）
+    const looksLikePath = /[\\/]/.test(v) || /\.[A-Za-z0-9]{1,8}$/.test(v)
+    const looksLikeSecretName = /^(id_(rsa|dsa|ecdsa|ed25519)|secrets?|credentials?|\.env(\..+)?)$/i.test(v.trim())
+    if (!looksLikePath && !looksLikeSecretName) return
     out.push(v.replace(/\\/g, '/'))
   }
   for (const key of PATH_KEYS) {
@@ -146,14 +149,14 @@ export function classifyToolCall({ toolName, args, rules, cwd }) {
   }
 
   // ---- 4. 兜底：读类工具直接放行，写类与执行类走 tool.exec ----
+  // 注意：读类工具如果触及密钥文件，上面的第 2 步已经拦下了。
   const READ_ONLY = new Set(['read_file', 'list_directory', 'glob', 'grep', 'search', 'file_read', 'read', 'ls', 'find', 'todo_write', 'ask_user_question', 'web_search', 'web_fetch'])
   if (READ_ONLY.has(toolName)) {
     return {
       action: 'read', label: '只读操作', risk: 'low', approval: 'none',
       needsApproval: false, command, paths, reason: '只读工具，无需审批',
     }
-  }
-  return finalize('tool.exec', ruleTable, {
+  }  return finalize('tool.exec', ruleTable, {
     command: command || `${toolName}(${summarizeArgs(args)})`,
     paths,
     reason: `未分类工具 ${toolName}`,

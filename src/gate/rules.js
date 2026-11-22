@@ -172,7 +172,9 @@ export const ACTIONS = {
     risk: 'critical',
     approval: 'owner2',
     tools: ['write_file', 'edit_file', 'str_replace_editor', 'bash'],
-    files: ['\\.env', '\\.env\\..*', '.*credentials.*', '.*secret.*', '.*\\.pem', '.*\\.key'],
+    // 路径模式同时覆盖：读（read_file 拿到 secrets.json 就等于拿到机器人控制权）
+    // 与写（改 .env / PEM）。`.*secret.*` 已包含 secrets.json / .credentials.yaml。
+    files: ['\\.env', '\\.env\\..*', '.*credentials.*', '.*secret.*', '.*\\.pem', '.*\\.key', '.*\\.p12', '.*\\.pfx', '.*id_rsa.*', '.*id_ed25519.*'],
     summary: '读写密钥文件，必须留痕',
     detailFields: ['repo', 'paths', 'operation'],
   },
