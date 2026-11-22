@@ -103,6 +103,7 @@ export function buildInjectionScript(token) {
     item.setAttribute(MARK, '1');
     item.removeAttribute('aria-current');
     item.classList.remove('active');
+    item.style.cursor = 'pointer';
 
     // 把文字换掉：保留原有图标节点，只替换文本节点
     var replaced = false;
@@ -120,13 +121,9 @@ export function buildInjectionScript(token) {
     })(item);
     if (!replaced) item.textContent = '企业微信 Superagent';
 
-    item.style.cursor = 'pointer';
-    item.addEventListener('click', function(ev) {
-      ev.preventDefault();
-      ev.stopPropagation();
-      window.open('/wecom-superagent/ui?token=' + encodeURIComponent(TOKEN), '_blank', 'noopener');
-    }, true);
-
+    // ⚠️ 不在这里绑 click：
+    // 克隆节点继承了 React 的事件系统，我们的监听器可能被它的重渲染冲掉。
+    // 改成在 document 上做事件委托（见下方 installDelegate），一次绑好，永不失效。
     nav.appendChild(item);
     return true;
   }
@@ -138,6 +135,91 @@ export function buildInjectionScript(token) {
     setTimeout(tick, 500);
   }
 
+  /**
+   * 打开设置页。
+   *
+   * 注意：不能用 window.location.href 赋值 —— DSH 桌面端是单页应用，
+   * 把主窗口导航到我们的页面会让用户回不到会话界面（只能重启）。
+   *
+   * 按可靠性依次尝试：
+   *   1. window.open 新窗口（Electron 通常允许，会开一个独立窗口）
+   *   2. 复制链接到剪贴板 + 提示用户自己粘贴（最差情况也能用）
+   */
+  /**
+   * 打开设置页。
+   *
+   * DSH 桌面端是单页应用：把主窗口导航过去会让用户回不到会话，所以：
+   *   1. 优先在应用内弹一层全屏 iframe（不离开当前页面，关掉就回来）；
+   *   2. iframe 被 CSP 拦或加载失败时，退回新窗口；
+   *   3. 都失败就复制链接并提示。
+   */
+  function openPanel() {
+    var url = window.location.origin + '/wecom-superagent/ui?token=' + encodeURIComponent(TOKEN);
+
+    // 1) 应用内覆盖层
+    try {
+      var old = document.getElementById('wecom-sa-overlay');
+      if (old) old.remove();
+      var wrap = document.createElement('div');
+      wrap.id = 'wecom-sa-overlay';
+      wrap.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:#0f1115;display:flex;flex-direction:column';
+      var bar = document.createElement('div');
+      bar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:#171a21;color:#e6e9ef;font:13px -apple-system,system-ui,sans-serif;border-bottom:1px solid #2a3040';
+      bar.innerHTML = '<span>企业微信 Superagent 设置</span>';
+      var close = document.createElement('button');
+      close.textContent = '关闭 ✕';
+      close.style.cssText = 'background:#2a3040;color:#e6e9ef;border:0;border-radius:6px;padding:5px 12px;cursor:pointer;font:inherit';
+      close.onclick = function() { wrap.remove(); };
+      bar.appendChild(close);
+      var frame = document.createElement('iframe');
+      frame.src = url;
+      frame.style.cssText = 'flex:1;width:100%;border:0;background:#0f1115';
+      // 加载失败（CSP/网络）时退回新窗口
+      frame.onerror = function() { wrap.remove(); fallbackOpen(url); };
+      wrap.appendChild(bar);
+      wrap.appendChild(frame);
+      document.body.appendChild(wrap);
+      // Esc 关闭
+      document.addEventListener('keydown', function esc(ev) {
+        if (ev.key === 'Escape') { wrap.remove(); document.removeEventListener('keydown', esc); }
+      });
+      return;
+    } catch (e) { /* 落到新窗口 */ }
+    fallbackOpen(url);
+  }
+
+  function fallbackOpen(url) {
+    var win = null;
+    try { win = window.open(url, '_blank', 'noopener,noreferrer'); } catch (e) { win = null; }
+    if (win) return;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url);
+        alert('设置页链接已复制到剪贴板，粘贴到浏览器打开：' + url);
+        return;
+      }
+    } catch (e) { /* 继续 */ }
+    prompt('打开下面的地址：', url);
+  }
+
+  function installDelegate() {
+    if (window.__wecomSuperagentDelegate) return;
+    window.__wecomSuperagentDelegate = true;
+    document.addEventListener('click', function(ev) {
+      var el = ev.target;
+      while (el && el !== document.body) {
+        if (el.getAttribute && el.getAttribute(MARK)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          openPanel();
+          return;
+        }
+        el = el.parentElement;
+      }
+    }, true);
+  }
+
+  installDelegate();
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', tick, { once: true });
   } else {
