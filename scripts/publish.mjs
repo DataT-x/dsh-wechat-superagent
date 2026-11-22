@@ -43,7 +43,7 @@ const DEFAULT_MESSAGE = [
   '- 负责人二次审批 + 第二负责人双签 + 确认短语',
   '- 模板卡片点按审批，按钮 key 带 HMAC 签名',
   '- 本地 git / GitHub issue PR 守望，水位与冷却',
-  '- 340 项单测（含审批绕过、密钥读取、HTTP 鉴权等安全用例）',
+  '- 378 项单测（含审批绕过、命令注入、密钥读取、HTTP 鉴权等安全用例）',
   '',
   'Co-Authored-By: Claude Code <noreply@anthropic.com>',
 ].join(String.fromCharCode(10))

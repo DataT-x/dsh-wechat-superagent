@@ -79,6 +79,28 @@ export function compile(pattern) {
   try { return new RegExp(pattern, 'i') } catch { return null }
 }
 
+/**
+ * 命令里是否出现「会改变控制流」的分隔符。
+ *
+ * 为什么这条是安全关键：`npm test; rm -rf /` 在模式匹配上会命中 `test.run`，
+ * 而 `test.run` 默认免审 —— 如果只看「命中了什么」，分号后面的删除就白嫖了审批。
+ * 所以**免审动作必须整条命令都是干净的单条命令**。
+ *
+ * 覆盖：`;` `&&` `||` `|` 反引号 `$()` 换行，以及 `&` 后台执行。
+ * 排除：引号内的同类字符（例如 `git commit -m "fix a; b"`）—— 这里用简化策略，
+ * 见到引号就认为该段不参与判定（宁可多审，不可漏审）。
+ */
+export function hasShellMetachars(command) {
+  if (typeof command !== 'string' || command.length === 0) return false
+  // 去掉成对的引号内容，避免 `-m "a; b"` 被误判
+  const stripped = command
+    .replace(/'[^']*'/g, "''")
+    .replace(/"[^"]*"/g, '""')
+  // $(...) 与反引号也是执行任意代码
+  if (/\$\(|`/.test(stripped)) return true
+  return /[;&|\n\r]/.test(stripped)
+}
+
 /** 命令是否命中某动作的模式。 */
 function commandMatches(action, command) {
   if (typeof command !== 'string' || command.length === 0) return false
@@ -129,8 +151,22 @@ export function classifyToolCall({ toolName, args, rules, cwd }) {
     ]
     for (const action of order) {
       if (!commandMatches(action, command)) continue
-      return finalize(action, ruleTable, { command, paths, reason: `命令命中 ${actionLabel(action)}` })
+      const result = finalize(action, ruleTable, { command, paths, reason: `命令命中 ${actionLabel(action)}` })
+      // ★ 安全关键：命中的动作如果**免审**，但整条命令夹带了别的操作（`;` `&&` `|` …），
+      //   就不能按免审放行 —— 否则 `npm test; rm -rf /` 会白嫖审批。
+      //   此时升级为 `tool.exec`，让它按动态风险走审批。
+      if (!result.needsApproval && hasShellMetachars(command)) {
+        return finalize('tool.exec', ruleTable, {
+          command,
+          paths,
+          reason: `免审命令夹带了其它操作（命中 ${actionLabel(action)}）`,
+        })
+      }
+      return result
     }
+    // 一条命令里如果出现多个需要审批的动作，取最危险的那个已在上面处理；
+    // 但「免审动作 + 高危动作」的组合会落到这里：例如 `npm test; git push --force`
+    // 已经因为 force-push 排在 order 前面而被抓住。
   }
 
   // ---- 2. 文件类匹配 ----
