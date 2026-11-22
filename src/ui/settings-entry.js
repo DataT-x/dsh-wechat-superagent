@@ -65,26 +65,53 @@ export function buildInjectionScript(token) {
   var TOKEN = ${JSON.stringify(safeToken)};
   var TRIED = 0;
 
+  /**
+   * 找到设置面板左侧的导航容器。
+   *
+   * 做法：先收集所有「文字恰好等于某个已知条目」的元素，
+   * 再向上找它们共同的父容器。这样不依赖标签类型
+   * （DSH 可能用 div/button/li，也可能改版换掉）。
+   */
   function findNav() {
-    // 设置面板里的一组「可点条目」：找同时包含若干已知条目名的容器
-    var KNOWN = ['通用设置','模型','内置插件','Agent 预设','账号与余额','更多'];
-    var nodes = document.querySelectorAll('button,a,div[role=button],li');
-    var best = null, bestScore = 0;
-    for (var i = 0; i < nodes.length; i++) {
-      var el = nodes[i];
+    var KNOWN = ['通用设置', '模型', '内置插件', 'Agent 预设', '账号与余额', '更多',
+                 'IM 机器人', '桌宠配置', '插件市场', '通知提醒', '桌面控制'];
+    // 找所有文字命中已知项、且没有更小的同类子元素的节点
+    var all = document.body.getElementsByTagName('*');
+    var hits = [];
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
       var text = (el.textContent || '').trim();
-      if (text.length > 24) continue;
-      var score = 0;
-      for (var k = 0; k < KNOWN.length; k++) if (text === KNOWN[k]) score += 1;
-      if (score === 0) continue;
-      var parent = el.parentElement;
-      if (!parent) continue;
-      // 父容器里应包含多个同类条目
-      var siblings = parent.children ? parent.children.length : 0;
-      if (siblings < 2) continue;
-      if (score > bestScore) { bestScore = score; best = el; }
+      if (text.length === 0 || text.length > 24) continue;
+      var exact = false;
+      for (var k = 0; k < KNOWN.length; k++) {
+        if (text === KNOWN[k]) { exact = true; break; }
+      }
+      if (!exact) continue;
+      // 只要最内层的那个（避免把外层容器也算进来）
+      var inner = false;
+      for (var c = 0; c < el.children.length; c++) {
+        var ct = (el.children[c].textContent || '').trim();
+        if (ct === text) { inner = true; break }
+      }
+      if (inner) continue;
+      hits.push(el);
     }
-    return best ? best.parentElement : null;
+    if (hits.length < 2) return null;
+
+    // 取这些命中元素的共同父容器：从第一个开始向上找，
+    // 能覆盖最多命中的那个父节点就是导航容器。
+    var bestParent = null, bestCount = 0;
+    for (var h = 0; h < hits.length; h++) {
+      var p = hits[h].parentElement;
+      if (!p) continue;
+      var count = 0;
+      for (var m = 0; m < hits.length; m++) {
+        if (p.contains(hits[m])) count += 1;
+      }
+      // 父容器不应包含太多命中（说明层级太浅，是整页）
+      if (count >= 2 && count > bestCount) { bestCount = count; bestParent = p; }
+    }
+    return bestParent;
   }
 
   function insert() {
@@ -138,68 +165,94 @@ export function buildInjectionScript(token) {
   /**
    * 打开设置页。
    *
-   * 注意：不能用 window.location.href 赋值 —— DSH 桌面端是单页应用，
-   * 把主窗口导航到我们的页面会让用户回不到会话界面（只能重启）。
+   * ⚠️ 两条硬约束（都是踩过的坑）：
+   *   1. **不能用 window.open** —— DSH 桌面端会开一个独立的 Electron 窗口，
+   *      关掉它会把整个应用带退出（用户「一退出就全退了」）。
+   *   2. **不能用 window.location 导航** —— 单页应用跳走后回不到会话界面。
+   *   3. **不能用 iframe** —— 同上，且被 CSP 拦时行为不可控。
    *
-   * 按可靠性依次尝试：
-   *   1. window.open 新窗口（Electron 通常允许，会开一个独立窗口）
-   *   2. 复制链接到剪贴板 + 提示用户自己粘贴（最差情况也能用）
-   */
-  /**
-   * 打开设置页。
-   *
-   * DSH 桌面端是单页应用：把主窗口导航过去会让用户回不到会话，所以：
-   *   1. 优先在应用内弹一层全屏 iframe（不离开当前页面，关掉就回来）；
-   *   2. iframe 被 CSP 拦或加载失败时，退回新窗口；
-   *   3. 都失败就复制链接并提示。
+   * 所以只能在**当前文档内**渲染：用 fetch 拿到设置页 HTML，把其中的
+   * <style> 与 <body> 内容搬进一个覆盖层。设置页是我们自己的静态页面，
+   * 不含相对资源引用，搬移是安全的。
    */
   function openPanel() {
-    var url = window.location.origin + '/wecom-superagent/ui?token=' + encodeURIComponent(TOKEN);
+    var url = '/wecom-superagent/ui?token=' + encodeURIComponent(TOKEN);
+    var old = document.getElementById('wecom-sa-overlay');
+    if (old) { old.remove(); return; }
 
-    // 1) 应用内覆盖层
-    try {
-      var old = document.getElementById('wecom-sa-overlay');
-      if (old) old.remove();
-      var wrap = document.createElement('div');
-      wrap.id = 'wecom-sa-overlay';
-      wrap.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:#0f1115;display:flex;flex-direction:column';
-      var bar = document.createElement('div');
-      bar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:#171a21;color:#e6e9ef;font:13px -apple-system,system-ui,sans-serif;border-bottom:1px solid #2a3040';
-      bar.innerHTML = '<span>企业微信 Superagent 设置</span>';
-      var close = document.createElement('button');
-      close.textContent = '关闭 ✕';
-      close.style.cssText = 'background:#2a3040;color:#e6e9ef;border:0;border-radius:6px;padding:5px 12px;cursor:pointer;font:inherit';
-      close.onclick = function() { wrap.remove(); };
-      bar.appendChild(close);
-      var frame = document.createElement('iframe');
-      frame.src = url;
-      frame.style.cssText = 'flex:1;width:100%;border:0;background:#0f1115';
-      // 加载失败（CSP/网络）时退回新窗口
-      frame.onerror = function() { wrap.remove(); fallbackOpen(url); };
-      wrap.appendChild(bar);
-      wrap.appendChild(frame);
-      document.body.appendChild(wrap);
-      // Esc 关闭
-      document.addEventListener('keydown', function esc(ev) {
-        if (ev.key === 'Escape') { wrap.remove(); document.removeEventListener('keydown', esc); }
-      });
-      return;
-    } catch (e) { /* 落到新窗口 */ }
-    fallbackOpen(url);
-  }
+    var wrap = document.createElement('div');
+    wrap.id = 'wecom-sa-overlay';
+    wrap.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:#0f1115;'
+      + 'display:flex;flex-direction:column;overflow:hidden';
 
-  function fallbackOpen(url) {
-    var win = null;
-    try { win = window.open(url, '_blank', 'noopener,noreferrer'); } catch (e) { win = null; }
-    if (win) return;
-    try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(url);
-        alert('设置页链接已复制到剪贴板，粘贴到浏览器打开：' + url);
-        return;
+    var bar = document.createElement('div');
+    bar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;'
+      + 'padding:10px 16px;background:#171a21;color:#e6e9ef;flex:0 0 auto;'
+      + 'font:14px -apple-system,"Segoe UI",system-ui,"Microsoft YaHei",sans-serif;'
+      + 'border-bottom:1px solid #2a3040';
+    var title = document.createElement('span');
+    title.textContent = '企业微信 Superagent 设置';
+    var close = document.createElement('button');
+    close.textContent = '关闭 ✕';
+    close.style.cssText = 'background:#2a3040;color:#e6e9ef;border:0;border-radius:6px;'
+      + 'padding:6px 14px;cursor:pointer;font:inherit';
+    close.onclick = function () { wrap.remove(); };
+    bar.appendChild(title);
+    bar.appendChild(close);
+
+    var body = document.createElement('div');
+    body.style.cssText = 'flex:1 1 auto;overflow:auto;background:#0f1115';
+    body.innerHTML = '<div style="padding:40px;color:#98a0b3;font:14px system-ui">正在加载设置页…</div>';
+
+    wrap.appendChild(bar);
+    wrap.appendChild(body);
+    document.body.appendChild(wrap);
+
+    function onKey(ev) {
+      if (ev.key === 'Escape') {
+        wrap.remove();
+        document.removeEventListener('keydown', onKey, true);
       }
-    } catch (e) { /* 继续 */ }
-    prompt('打开下面的地址：', url);
+    }
+    document.addEventListener('keydown', onKey, true);
+
+    // 拉取设置页并原地渲染
+    fetch(url, { credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then(function (html) {
+        if (!document.getElementById('wecom-sa-overlay')) return;
+        var doc = new DOMParser().parseFromString(html, 'text/html');
+        // 把 <style> 搬进来（只搬一次）
+        var styles = doc.querySelectorAll('style');
+        for (var i = 0; i < styles.length; i++) {
+          var st = document.createElement('style');
+          st.textContent = styles[i].textContent;
+          wrap.appendChild(st);
+        }
+        // 把 <body> 的节点搬进来
+        body.innerHTML = '';
+        var kids =doc.body.childNodes;
+        for (var j = 0; j < kids.length; j++) {
+          body.appendChild(document.importNode(kids[j], true));
+        }
+        // 内联脚本已被 DOMParser 丢弃（安全），需要单独重放
+        var scripts = doc.querySelectorAll('script');
+        for (var k = 0; k < scripts.length; k++) {
+          try {
+            var sc = document.createElement('script');
+            sc.textContent = scripts[k].textContent;
+            body.appendChild(sc);
+          } catch (e) { /* 单个脚本失败不影响整体 */ }
+        }
+        // 覆盖层的根要能滚动到设置页自己的背景
+        body.style.background = '#0f1115';
+      })
+      .catch(function (err) {
+        body.innerHTML = '<div style="padding:40px;color:#f87171;font:14px system-ui">'
+          + '无法加载设置页：' + String(err && err.message ? err.message : err)
+          + '<br><br>也可以直接在浏览器打开：<br><code style="color:#4d6bfe">'
+          + window.location.origin + url + '</code></div>';
+      });
   }
 
   function installDelegate() {

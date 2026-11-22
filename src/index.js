@@ -100,11 +100,16 @@ export async function apply(ctx, config) {
     log,
   })
   // 支持热重连
+  // 支持热重连。
+  // ⚠️ 不能走 dispose()：它会 removedAllListeners()，把我们在下面接的
+  // message/event/failure 监听连同 online 状态回调一起清掉，
+  // 结果就是「连上了但界面永远显示未连接」。
+  // 正确做法是只断开底层 client，保留 transport 自身的事件总线。
   transport.reconnect = async (botId, secret, wsUrl) => {
-    await transport.dispose().catch(() => {})
-    transport.disposed = false
+    await transport.disconnect().catch(() => {})
     transport.options = { ...transport.options, botId, secret, wsUrl: wsUrl || undefined, log }
     transport.state = STATE.idle
+    transport.disposed = false
     await transport.connect()
     return transport
   }

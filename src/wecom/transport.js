@@ -59,8 +59,11 @@ export class WeComTransport extends EventEmitter {
     this.stats = { inbound: 0, outbound: 0, errors: 0, reconnects: 0 }
   }
 
+  /** 统一日志出口（this.options.log 是 `(level, msg, ...args)` 形式的函数）。 */
   log(level, message, ...args) {
-    if (typeof this.options.log === 'function') this.options.log(level, message, ...args)
+    if (typeof this.options.log === 'function') {
+      try { this.options.log(level, message, ...args) } catch { /* 日志失败不影响连接 */ }
+    }
   }
 
   get isOnline() {
@@ -85,10 +88,13 @@ export class WeComTransport extends EventEmitter {
       ...(this.options.heartbeatInterval ? { heartbeatInterval: this.options.heartbeatInterval } : {}),
       maxReconnectAttempts: this.options.maxReconnectAttempts ?? -1,
       logger: {
-        debug: (m, ...a) => this.log.debug(m, ...a),
-        info: (m, ...a) => this.log.info(m, ...a),
-        warn: (m, ...a) => this.log.warn(m, ...a),
-        error: (m, ...a) => this.log.error(m, ...a),
+        // this.log 是方法，不是对象：必须按 (level, msg) 调用。
+        // （早期写成 this.log.info(...) 会让 SDK 每次打日志就抛 TypeError，
+        //   异常冒泡到 SDK 内部后连接状态机被打断，表现为「连不上」。）
+        debug: (m, ...a) => this.log('debug', m, ...a),
+        info: (m, ...a) => this.log('info', m, ...a),
+        warn: (m, ...a) => this.log('warn', m, ...a),
+        error: (m, ...a) => this.log('error', m, ...a),
       },
     })
     this.client = client
@@ -105,13 +111,13 @@ export class WeComTransport extends EventEmitter {
       this.lastError = null
       this.emit('state', this.state)
       this.emit('online')
-      this.log.info('企微机器人已上线')
+      this.log('info', '企微机器人已上线')
     })
     client.on('disconnected', (reason) => {
       this.state = STATE.offline
       this.emit('state', this.state)
       this.emit('offline', reason)
-      this.log.warn('企微连接断开: %s', String(reason ?? ''))
+      this.log('warn', '企微连接断开: %s', String(reason ?? ''))
     })
     client.on('reconnecting', (attempt) => {
       this.stats.reconnects += 1
@@ -124,7 +130,7 @@ export class WeComTransport extends EventEmitter {
       this.lastError = error instanceof Error ? error.message : String(error)
       this.emit('state', STATE.error)
       this.emit('failure', error)
-      this.log.error('企微连接错误: %s', this.lastError)
+      this.log('error', '企微连接错误: %s', this.lastError)
     })
     client.on('message', (frame) => {
       this.stats.inbound += 1
