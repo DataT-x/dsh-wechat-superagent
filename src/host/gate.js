@@ -183,6 +183,22 @@ export class ApprovalGate {
     }
 
     // ---- 等待决策 ----
+    // 注意：这里会**同步阻塞**当前 agent 轮次，直到有人批、超时或被取消。
+    // 这是「超时即拒绝」的必然代价，但对用户来说是可见的：
+    // 卡片上写了剩余时间，聊天里也会收到「正在等待审批」的提示。
+    this.auditEvent('gate.waiting', { approvalId: approval.id, toolName, expiresAt: approval.expiresAt })
+    // 同一会话已经有别的审批在等时，提醒用户需要按顺序处理，
+    // 避免多个调用各自静默等满时限。
+    const concurrent = this.approval.list({ sessionId: sessionIdOf(exec.agent) }).length
+    if (concurrent > 1) {
+      try {
+        await this.deliver({
+          approval,
+          kind: 'notice',
+          text: `⏳ 当前有 ${concurrent} 个审批在排队。按顺序处理完前面那个，这个才会继续。`,
+        })
+      } catch { /* 提示失败不影响主流程 */ }
+    }
     const result = await this.approval.waitFor(approval.id, exec.signal)
     if (result.outcome === 'approved') {
       audit('gate.allow.approved', { approvalId: approval.id, toolName })
@@ -271,9 +287,13 @@ export class ApprovalGate {
     }
   }
 
+  /** 写一条审计（模块级函数无法从实例调用，这里做实例转发）。 */
+  auditEvent(type, payload) {
+    audit(type, payload)
+  }
+
   /** 构造卡片（供 deliver/update 复用）。 */
-  cardFor(approval) {
-    return buildApprovalCard({
+  cardFor(approval) {    return buildApprovalCard({
       approval,
       secret: this.getSigningSecret(),
       approvers: { primary: approval.approvers, owner: approval.owner },
