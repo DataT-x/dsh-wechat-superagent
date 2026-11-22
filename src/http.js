@@ -253,6 +253,59 @@ export function registerHttp({ ctx, deps, log }) {
     json(res, 200, { records: rows.reverse() })
   }))
 
+  // ---- 会话 ID 一览（从入站记录里聚合）----
+  // 用户不知道自己的 userid / chatId 是什么，这里直接把「谁在哪个会话里说过话」列出来。
+  add('exact', '/api/identities', guarded(async (req, res) => {
+    const rows = tailNdjson(files.audit(), 2000).filter((r) => r.type === 'inbound')
+    /** @type {Map<string, object>} */
+    const chats = new Map()
+    /** @type {Map<string, object>} */
+    const users = new Map()
+    for (const r of rows) {
+      const chatId = String(r.chatId ?? '')
+      const senderId = String(r.senderId ?? '')
+      if (chatId) {
+        const cur = chats.get(chatId) ?? {
+          chatId,
+          chatType: r.chatType ?? 'single',
+          title: r.chatTitle || (r.chatType === 'group' ? '' : (r.senderName || senderId)),
+          lastAt: r.at,
+          lastText: r.text ?? '',
+          messages: 0,
+          bound: Boolean(r.sessionId),
+          members: new Set(),
+        }
+        cur.messages += 1
+        if (r.at > (cur.lastAt ?? '')) { cur.lastAt = r.at; cur.lastText = r.text ?? '' }
+        if (r.chatTitle) cur.title = r.chatTitle
+        if (r.sessionId) cur.bound = true
+        if (senderId) cur.members.add(r.senderName ? `${r.senderName} (${senderId})` : senderId)
+        chats.set(chatId, cur)
+      }
+      if (senderId) {
+        const cur = users.get(senderId) ?? {
+          userId: senderId,
+          name: r.senderName || '',
+          lastAt: r.at,
+          messages: 0,
+          chats: new Set(),
+        }
+        cur.messages += 1
+        if (r.senderName) cur.name = r.senderName
+        if (chatId) cur.chats.add(chatId)
+        users.set(senderId, cur)
+      }
+    }
+    json(res, 200, {
+      chats: [...chats.values()]
+        .map((c) => ({ ...c, members: [...c.members] }))
+        .sort((a, b) => String(b.lastAt).localeCompare(String(a.lastAt))),
+      users: [...users.values()]
+        .map((u) => ({ ...u, chats: [...u.chats] }))
+        .sort((a, b) => String(b.lastAt).localeCompare(String(a.lastAt))),
+    })
+  }))
+
   // ---- 规则 ----
   add('exact', '/api/rules', guarded(async (req, res) => {
     json(res, 200, { rules: mergeRules(deps.getConfig().rules) })
@@ -566,6 +619,7 @@ code { background:var(--panel-2); padding:1px 6px; border-radius:5px; font-famil
     <button data-tab="approval">审批</button>
     <button data-tab="watch">仓库守望</button>
     <button data-tab="pending">待审批</button>
+    <button data-tab="ids">会话 ID</button>
     <button data-tab="audit">审计</button>
   </nav>
 
@@ -698,6 +752,29 @@ code { background:var(--panel-2); padding:1px 6px; border-radius:5px; font-famil
     </div>
   </section>
 
+  <section id="tab-ids">
+    <div class="card">
+      <h3>怎么用这一页</h3>
+      <p class="muted" style="margin-top:0">
+        先让目标的人<b>在企业微信里给机器人随便发一条消息</b>（比如「你好」），这里就会自动出现他的
+        <code>userid</code> 和所在会话的 <code>chatId</code>。复制粘贴即可，不用去企微后台找。
+      </p>
+      <div class="actions" style="margin-top:0">
+        <button class="btn" id="reloadIds">刷新</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>会话（chatId）</h3>
+      <p class="muted" style="margin-top:0">单聊的 chatId 就是对方的 userid；群聊是企微给的群 ID。填到「仓库守望」或绑定会话时用这个。</p>
+      <table><thead><tr><th>chatId</th><th>类型</th><th>名称</th><th>消息</th><th>已绑定</th><th></th></tr></thead><tbody id="chatsBody"></tbody></table>
+    </div>
+    <div class="card">
+      <h3>成员（userid）</h3>
+      <p class="muted" style="margin-top:0">填到「成员与角色」的 userid 用这个。</p>
+      <table><thead><tr><th>userid</th><th>昵称</th><th>消息</th><th></th></tr></thead><tbody id="usersBody"></tbody></table>
+    </div>
+  </section>
+
   <section id="tab-audit">
     <div class="card">
       <h3>最近 200 条审计</h3>
@@ -748,6 +825,7 @@ document.querySelectorAll('#tabs button').forEach((btn) => {
     btn.classList.add('active');
     $('tab-' + btn.dataset.tab).classList.add('active');
     if (btn.dataset.tab === 'audit') loadAudit();
+    if (btn.dataset.tab === 'ids') loadIdentities();
     if (btn.dataset.tab === 'pending') loadPending();
     if (btn.dataset.tab === 'watch') loadWatches();
   };
@@ -998,6 +1076,76 @@ async function loadAudit() {
     if (!(r.records || []).length) body.innerHTML = '<tr><td colspan="4" class="muted">暂无记录。</td></tr>';
   } catch (e) { toast(e.message, 'err'); }
 }
+// ---- 会话 ID ----
+function copyBtn(text) {
+  const b = document.createElement('button');
+  b.className = 'btn ghost';
+  b.textContent = '复制';
+  b.onclick = async () => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(text);
+      else {
+        const ta = document.createElement('textarea');
+        ta.value = text; document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); ta.remove();
+      }
+      toast('已复制：' + text, 'ok');
+    } catch (e) { prompt('复制这段：', text); }
+  };
+  return b;
+}
+async function loadIdentities() {
+  try {
+    const r = await api('/api/identities');
+    const chatsBody = $('chatsBody');
+    chatsBody.innerHTML = '';
+    (r.chats || []).forEach((c) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td><code>' + esc(c.chatId) + '</code></td>'
+        + '<td>' + esc(c.chatType === 'group' ? '群聊' : '单聊') + '</td>'
+        + '<td>' + esc(c.title || '—') + '</td>'
+        + '<td>' + (c.messages || 0) + '</td>'
+        + '<td>' + (c.bound ? '<span class="pill ok">已绑定</span>' : '<span class="pill">未绑定</span>') + '</td>';
+      const td = document.createElement('td');
+      td.appendChild(copyBtn(c.chatId));
+      tr.appendChild(td);
+      chatsBody.appendChild(tr);
+    });
+    if (!(r.chats || []).length) {
+      chatsBody.innerHTML = '<tr><td colspan="6" class="muted">还没有收到任何消息。让目标用户在企业微信里给机器人发一条「你好」，回来点刷新。</td></tr>';
+    }
+
+    const usersBody = $('usersBody');
+    usersBody.innerHTML = '';
+    (r.users || []).forEach((u) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td><code>' + esc(u.userId) + '</code></td>'
+        + '<td>' + esc(u.name || '—') + '</td>'
+        + '<td>' + (u.messages || 0) + '</td>';
+      const td = document.createElement('td');
+      td.appendChild(copyBtn(u.userId));
+      const add = document.createElement('button');
+      add.className = 'btn ghost';
+      add.style.marginLeft = '6px';
+      add.textContent = '设为负责人';
+      add.onclick = async () => {
+        try {
+          await api('/api/config', { method: 'POST', body: JSON.stringify({ ownerUserId: u.userId }) });
+          toast('已把 ' + u.userId + ' 设为负责人', 'ok');
+          await loadAll();
+        } catch (e) { toast(e.message, 'err'); }
+      };
+      td.appendChild(add);
+      tr.appendChild(td);
+      usersBody.appendChild(tr);
+    });
+    if (!(r.users || []).length) {
+      usersBody.innerHTML = '<tr><td colspan="4" class="muted">还没有收到任何消息。</td></tr>';
+    }
+  } catch (e) { toast(e.message, 'err'); }
+}
+$('reloadIds').onclick = () => loadIdentities();
+
 $('refreshBtn').onclick = () => loadAll();
 
 // ---- 扫码创建 ----

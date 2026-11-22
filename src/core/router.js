@@ -89,6 +89,19 @@ export class Router extends EventEmitter {
     this.learnIdentity({ body, chatId, chatType, senderId })
 
     this.record('inbound', { chatId, chatType, senderId, text: redactText(text.slice(0, 500)) })
+    // 同时写进审计日志：设置页的「审计」和「会话 ID」两个面板都读这份。
+    // 之前只写了 deliveries.ndjson，结果用户在界面上根本查不到 chatId。
+    appendNdjson(files.audit(), {
+      at: new Date().toISOString(),
+      type: 'inbound',
+      chatId,
+      chatType,
+      senderId,
+      senderName: this.state.names?.[senderId] ?? '',
+      chatTitle: this.state.titles?.[chatId] ?? '',
+      sessionId: this.state.bindings?.[chatId] ?? '',
+      text: redactText(text.slice(0, 120)),
+    })
     // 同步通知上层（用于把企微来源带给审批闸，让审批卡片能回到正确的会话）
     this.emit('inbound', {
       chatId, chatType, senderId, chatTitle: this.state.titles?.[chatId],

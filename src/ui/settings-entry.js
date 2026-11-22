@@ -165,94 +165,91 @@ export function buildInjectionScript(token) {
   /**
    * 打开设置页。
    *
-   * ⚠️ 两条硬约束（都是踩过的坑）：
-   *   1. **不能用 window.open** —— DSH 桌面端会开一个独立的 Electron 窗口，
-   *      关掉它会把整个应用带退出（用户「一退出就全退了」）。
-   *   2. **不能用 window.location 导航** —— 单页应用跳走后回不到会话界面。
-   *   3. **不能用 iframe** —— 同上，且被 CSP 拦时行为不可控。
+   * 三条硬约束（都是踩过的坑）：
+   *   1. 不能用 window.open —— DSH 桌面端会开独立 Electron 窗口，
+   *      关掉它会把整个应用带退出。
+   *   2. 不能把设置页 HTML 直接塞进主文档 —— 它的 body/:root/* 规则
+   *      会污染 DSH 自己的样式，关掉后界面还是坏的。
+   *   3. 不能用 location 导航 —— 单页应用跳走后回不到会话。
    *
-   * 所以只能在**当前文档内**渲染：用 fetch 拿到设置页 HTML，把其中的
-   * <style> 与 <body> 内容搬进一个覆盖层。设置页是我们自己的静态页面，
-   * 不含相对资源引用，搬移是安全的。
+   * 结论：用**同源 iframe**。样式与脚本天然隔离，关闭只是移除节点，
+   * 对 DSH 零副作用。
    */
   function openPanel() {
+    var existing = document.getElementById('wecom-sa-overlay');
+    if (existing) { existing.remove(); return; }
+
     var url = '/wecom-superagent/ui?token=' + encodeURIComponent(TOKEN);
-    var old = document.getElementById('wecom-sa-overlay');
-    if (old) { old.remove(); return; }
 
     var wrap = document.createElement('div');
     wrap.id = 'wecom-sa-overlay';
-    wrap.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:#0f1115;'
-      + 'display:flex;flex-direction:column;overflow:hidden';
+    wrap.style.cssText = 'position:fixed;inset:0;z-index:2147483000;'
+      + 'background:#0f1115;display:flex;flex-direction:column;overflow:hidden';
 
     var bar = document.createElement('div');
     bar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;'
       + 'padding:10px 16px;background:#171a21;color:#e6e9ef;flex:0 0 auto;'
       + 'font:14px -apple-system,"Segoe UI",system-ui,"Microsoft YaHei",sans-serif;'
       + 'border-bottom:1px solid #2a3040';
+
     var title = document.createElement('span');
     title.textContent = '企业微信 Superagent 设置';
-    var close = document.createElement('button');
-    close.textContent = '关闭 ✕';
-    close.style.cssText = 'background:#2a3040;color:#e6e9ef;border:0;border-radius:6px;'
-      + 'padding:6px 14px;cursor:pointer;font:inherit';
-    close.onclick = function () { wrap.remove(); };
-    bar.appendChild(title);
-    bar.appendChild(close);
 
-    var body = document.createElement('div');
-    body.style.cssText = 'flex:1 1 auto;overflow:auto;background:#0f1115';
-    body.innerHTML = '<div style="padding:40px;color:#98a0b3;font:14px system-ui">正在加载设置页…</div>';
+    var actions = document.createElement('span');
+
+    var openNew = document.createElement('button');
+    openNew.textContent = '在浏览器打开';
+    openNew.style.cssText = 'background:transparent;color:#98a0b3;border:1px solid #2a3040;'
+      + 'border-radius:6px;padding:6px 12px;cursor:pointer;font:inherit;margin-right:8px';
+
+    var close = document.createElement('button');
+    close.textContent = '返回 DSH ✕';
+    close.style.cssText = 'background:#4d6bfe;color:#fff;border:0;border-radius:6px;'
+      + 'padding:7px 16px;cursor:pointer;font:inherit;font-weight:600';
+
+    function teardown() {
+      try { wrap.remove() } catch (e) { /* ignore */ }
+      try { document.removeEventListener('keydown', onKey, true) } catch (e) { /* ignore */ }
+    }
+    close.onclick = teardown;
+    // 兜底：「在浏览器打开」用 a[target=_blank] 的等价物，
+    // 但桌面端 window.open 会毁应用，所以这里只复制链接。
+    openNew.onclick = function () {
+      var full = window.location.origin + url;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(full);
+          openNew.textContent = '链接已复制';
+          setTimeout(function () { openNew.textContent = '在浏览器打开' }, 1800);
+          return;
+        }
+      } catch (e) { /* fall through */ }
+      prompt('复制这个地址到浏览器打开：', full);
+    };
+
+    actions.appendChild(openNew);
+    actions.appendChild(close);
+    bar.appendChild(title);
+    bar.appendChild(actions);
+
+    var frame = document.createElement('iframe');
+    frame.src = url;
+    frame.setAttribute('allow', 'clipboard-write');
+    frame.style.cssText = 'flex:1 1 auto;width:100%;border:0;background:#0f1115;display:block';
 
     wrap.appendChild(bar);
-    wrap.appendChild(body);
+    wrap.appendChild(frame);
     document.body.appendChild(wrap);
 
     function onKey(ev) {
-      if (ev.key === 'Escape') {
-        wrap.remove();
-        document.removeEventListener('keydown', onKey, true);
-      }
+      if (ev.key === 'Escape') teardown();
     }
     document.addEventListener('keydown', onKey, true);
 
-    // 拉取设置页并原地渲染
-    fetch(url, { credentials: 'same-origin' })
-      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
-      .then(function (html) {
-        if (!document.getElementById('wecom-sa-overlay')) return;
-        var doc = new DOMParser().parseFromString(html, 'text/html');
-        // 把 <style> 搬进来（只搬一次）
-        var styles = doc.querySelectorAll('style');
-        for (var i = 0; i < styles.length; i++) {
-          var st = document.createElement('style');
-          st.textContent = styles[i].textContent;
-          wrap.appendChild(st);
-        }
-        // 把 <body> 的节点搬进来
-        body.innerHTML = '';
-        var kids =doc.body.childNodes;
-        for (var j = 0; j < kids.length; j++) {
-          body.appendChild(document.importNode(kids[j], true));
-        }
-        // 内联脚本已被 DOMParser 丢弃（安全），需要单独重放
-        var scripts = doc.querySelectorAll('script');
-        for (var k = 0; k < scripts.length; k++) {
-          try {
-            var sc = document.createElement('script');
-            sc.textContent = scripts[k].textContent;
-            body.appendChild(sc);
-          } catch (e) { /* 单个脚本失败不影响整体 */ }
-        }
-        // 覆盖层的根要能滚动到设置页自己的背景
-        body.style.background = '#0f1115';
-      })
-      .catch(function (err) {
-        body.innerHTML = '<div style="padding:40px;color:#f87171;font:14px system-ui">'
-          + '无法加载设置页：' + String(err && err.message ? err.message : err)
-          + '<br><br>也可以直接在浏览器打开：<br><code style="color:#4d6bfe">'
-          + window.location.origin + url + '</code></div>';
-      });
+    // 点遮罩最外层（未被 iframe 覆盖的边）也能退出
+    wrap.addEventListener('mousedown', function (ev) {
+      if (ev.target === wrap) teardown();
+    });
   }
 
   function installDelegate() {
