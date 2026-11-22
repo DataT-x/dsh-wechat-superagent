@@ -35,6 +35,19 @@ const READ_ONLY_TOOLS = new Set([
 ])
 
 /**
+ * 本插件自己的工具。
+ *
+ * 只读的那几个必须免审，否则会出现死锁：
+ * 「想看状态 → 需要审批 → 需要有人批 → 但还没配好机器人」。
+ *
+ * 写操作（send / decide / watch / request_approval）不在这里，
+ * 它们靠各自的 `confirm: true` 参数 + 业务校验把关。
+ */
+const PLUGIN_READ_ONLY_TOOLS = new Set([
+  'wecom_status', 'wecom_pending', 'wecom_repo_here', 'wecom_audit_tail',
+])
+
+/**
  * 审批闸。
  */
 export class ApprovalGate {
@@ -91,6 +104,12 @@ export class ApprovalGate {
     if (exec.agent === undefined) return next()
 
     const toolName = String(exec.name ?? '')
+
+    // 插件自己的只读工具：直接放行。
+    // 理由：它们是「查看我们自己的状态」，不碰外部世界；
+    // 而且我们需要它们在任何时候可用，包括审批链路还没配好的时候。
+    if (PLUGIN_READ_ONLY_TOOLS.has(toolName)) return next()
+
     const isReadOnly = READ_ONLY_TOOLS.has(toolName)
 
     const rules = mergeRules(config.rules)

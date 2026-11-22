@@ -252,3 +252,24 @@ describe('来源标记', () => {
     assert.equal(gate.originOf('sess-1'), null)
   })
 })
+
+describe('插件自身的只读工具免审（避免「看状态要先审批」的死锁）', () => {
+  const readOnly = ['wecom_status', 'wecom_pending', 'wecom_repo_here', 'wecom_audit_tail']
+  for (const name of readOnly) {
+    test(`${name} 免审`, async () => {
+      const { gate, delivered } = setup()
+      const d = await gate.onPreExecute(exec(name, {}), async () => ({ kind: 'allow' }))
+      assert.equal(d.kind, 'allow')
+      assert.equal(delivered.length, 0)
+    })
+  }
+
+  test('wecom_send 这类写工具仍要审批', async () => {
+    const { gate, approval, delivered } = setup()
+    const p = gate.onPreExecute(exec('wecom_send', { text: 'hi', confirm: true }), async () => ({ kind: 'allow' }))
+    await waitUntil(() => delivered.length > 0, 8000)
+    assert.ok(delivered.length > 0, '写操作必须产生审批卡')
+    for (const a of approval.list()) approval.cancel(a.id, 'cleanup')
+    await Promise.race([p, new Promise((r) => setTimeout(r, 1000))])
+  })
+})
