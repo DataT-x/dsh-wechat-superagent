@@ -33,7 +33,9 @@ const TOO_LARGE = Symbol('too-large')
 export function registerHttp({ ctx, deps, log }) {
   if (!ctx.webServer || typeof ctx.webServer.register !== 'function') {
     log('warn', 'webServer 不可用，设置页接口未注册')
-    return () => {}
+    const noop = () => {}
+    noop.panelToken = loadOrCreateToken()
+    return noop
   }
   const token = loadOrCreateToken()
   const disposers = []
@@ -351,7 +353,10 @@ export function registerHttp({ ctx, deps, log }) {
     res.end('not found')
   })
 
-  return () => { for (const d of disposers) { try { d() } catch { /* ignore */ } } }
+  const dispose = () => { for (const d of disposers) { try { d() } catch { /* ignore */ } } }
+  // 把面板令牌挂在 disposer 上：设置入口注入需要同一个令牌，避免两处生成两份。
+  dispose.panelToken = token
+  return dispose
 
   // ---------- helpers ----------
 

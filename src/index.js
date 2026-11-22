@@ -29,6 +29,7 @@ import { ApprovalGate } from './host/gate.js'
 import { NativeApprovalBridge } from './host/native-approval.js'
 import { registerTools } from './tools.js'
 import { registerHttp } from './http.js'
+import { installSettingsEntry, readPanelToken } from './ui/settings-entry.js'
 import { toWecomMarkdown } from './core/context.js'
 
 export const name = 'wecom-superagent'
@@ -251,6 +252,14 @@ export async function apply(ctx, config) {
     log,
   })
 
+  // ---------- 8.5 客户端设置入口 ----------
+  // 往 DSH 首页注入一小段脚本，在设置面板里加一栏「企业微信 Superagent」。
+  const offSettingsEntry = installSettingsEntry({
+    ctx,
+    getPanelToken: () => (typeof offHttp === 'function' && offHttp.panelToken) || readPanelToken(),
+    log,
+  })
+
   // ---------- 9. 传输层事件接线 ----------
   transport.on('message', (frame) => {
     void router.handleMessage(frame).catch((error) => log.error('处理消息失败：%s', String(error?.message ?? error)))
@@ -340,6 +349,7 @@ export async function apply(ctx, config) {
   ctx.effect(() => () => {
     try { offPre?.() } catch { /* ignore */ }
     try { offNative?.() } catch { /* ignore */ }
+    try { offSettingsEntry?.() } catch { /* ignore */ }
     try { offHttp?.() } catch { /* ignore */ }
     for (const d of toolDisposers) { try { d() } catch { /* ignore */ } }
     gate.dispose()

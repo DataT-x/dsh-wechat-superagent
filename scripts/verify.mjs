@@ -67,9 +67,11 @@ try {
   else ok('9 个工具注册成功')
   const hasGate = listeners.includes('tools/pre-execute')
   const hasApproval = listeners.includes('approval/request')
+  const hasInject = listeners.includes('webserver/index-inject')
   if (!hasGate) fail('未监听 tools/pre-execute（审批闸失效）')
   if (!hasApproval) fail('未监听 approval/request（原生审批未接管）')
-  if (hasGate && hasApproval) ok('审批闸与原生审批桥已挂载')
+  if (!hasInject) fail('未监听 webserver/index-inject（设置面板入口不会出现）')
+  if (hasGate && hasApproval && hasInject) ok('审批闸 / 原生审批桥 / 设置入口注入 已挂载')
   if (routes.length < 15) fail(`路由过少（${routes.length}）`)
   else ok(`${routes.length} 条 HTTP 路由注册成功`)
 } catch (error) {
