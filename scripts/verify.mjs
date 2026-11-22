@@ -5,9 +5,15 @@
  *   - 插件导出形状正确
  *   - 用假 ctx 跑一遍 apply（9 个工具 + 全部路由 + 两个关键监听）
  */
-import { readdirSync, statSync } from 'node:fs'
+import { mkdirSync, readdirSync, statSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, relative, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
+
+// 自检必须用隔离目录：否则会读到真实凭据并尝试连接企微，
+// 长连接会让脚本永远不退出。
+process.env.DSH_WECOM_HOME = join(tmpdir(), 'wecom-verify-' + Date.now())
+mkdirSync(process.env.DSH_WECOM_HOME, { recursive: true })
 
 const root = process.cwd()
 const srcDir = join(root, 'src')
