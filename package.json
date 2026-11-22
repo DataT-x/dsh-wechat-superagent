@@ -1,0 +1,73 @@
+{
+  "name": "@datat-x/dsh-wechat-superagent",
+  "version": "0.1.0",
+  "description": "企业微信 superagent：一键扫码接入企微机器人，盯住 Git 仓库，把提交/推送/测试/构建/发布变成可在企微卡片上审批的动作。",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "wecom",
+    "wechat-work",
+    "wechat",
+    "superagent",
+    "approval",
+    "git",
+    "ai-agent"
+  ],
+  "author": "DataT-x",
+  "license": "MIT",
+  "type": "module",
+  "icon": "./assets/icon.svg",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "assets",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "compatibility": {
+      "dsh": "0.2.2-rc.5",
+      "dshReleases": {
+        "0.2.1-rc.2": "compatible",
+        "0.2.2-rc.1": "compatible",
+        "0.2.2-rc.5": "compatible"
+      },
+      "profiles": [
+        "desktop",
+        "web"
+      ]
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check src/index.js && node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.19.0"
+  },
+  "optionalDependencies": {
+    "@wecom/aibot-node-sdk": "^1.0.7",
+    "qrcode": "^1.5.4"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    }
+  }
+}
