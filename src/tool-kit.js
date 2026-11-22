@@ -148,7 +148,11 @@ export function defineTool({ name, description, parameters, output, execute, isC
     description,
     parameters: compiled,
     output: {
-      schema: output.schema,
+      // 输出 schema 也用同一套编译器：作者写 `required: true` 是注解，
+      // 编译后必须变成父对象的 `required: [...]` 数组。
+      // （DSH 的 schema 编译器明确拒绝在类型节点上出现 required 布尔值，
+      //   报错形如：`schema.properties.ok.required is not supported on type "boolean"`）
+      schema: compileParameters(output.properties ?? {}),
       render: (args, value) => output.render(args, redactDeep(value)),
     },
     isConcurrencySafe: (args) => {

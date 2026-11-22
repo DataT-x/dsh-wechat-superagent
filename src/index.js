@@ -34,10 +34,6 @@ import { toWecomMarkdown } from './core/context.js'
 export const name = 'wecom-superagent'
 
 /**
- * 依赖：webServer 用于设置页/回调；tools 用于注册模型工具。
- * 三个都是 `inject` 可选依赖，DSH 会在服务就绪后再调用 apply。
- */
-/**
  * 依赖：webServer 用于设置页；tools 用于注册模型工具。
  *
  * `agents` 不放进 inject：它是 `dsh-agent` 提供的，某些 profile 里可能缺席，

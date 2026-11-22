@@ -153,3 +153,60 @@ describe('defineTool', () => {
     assert.ok(tool.output.schema)
   })
 })
+
+describe('DSH schema 约束：required 只能出现在 object 节点上', () => {
+  /** DSH 的规则：类型节点（非 object）不得出现 required 布尔值。 */
+  function findViolations(node, path = '$', out = []) {
+    if (!node || typeof node !== 'object') return out
+    if (Object.hasOwn(node, 'required')) {
+      if (node.type !== 'object' || !Array.isArray(node.required)) {
+        out.push(`${path}.required on type="${node.type}"`)
+      }
+    }
+    if (node.properties) for (const [k, v] of Object.entries(node.properties)) findViolations(v, `${path}.${k}`, out)
+    if (node.items) findViolations(node.items, `${path}[]`, out)
+    return out
+  }
+
+  test('compileParameters 把 required 注解编译成父对象的数组', () => {
+    const s = compileParameters({
+      a: { type: 'string', required: true },
+      b: { type: 'boolean', required: true },
+      c: { type: 'string' },
+    })
+    assert.deepEqual(s.required, ['a', 'b'])
+    assert.equal(s.properties.a.required, undefined, '类型节点不应保留 required 布尔值')
+    assert.deepEqual(findViolations(s), [])
+  })
+
+  test('嵌套对象同样只产出 required 数组', () => {
+    const s = compileParameters({
+      outer: {
+        type: 'object',
+        properties: { x: { type: 'number', required: true } },
+      },
+    })
+    assert.deepEqual(s.properties.outer.required, ['x'])
+    assert.equal(s.properties.outer.properties.x.required, undefined)
+    assert.deepEqual(findViolations(s), [])
+  })
+
+  test('defineTool 产出的 tools 无 schema 违规（真实构建）', () => {
+    const tool = defineTool({
+      name: 'demo',
+      description: 'd',
+      parameters: { q: { type: 'string', required: true } },
+      output: {
+        // 注意：这里用 properties 而不是 schema —— 与 tools.js 的写法一致
+        properties: {
+          ok: { type: 'boolean', required: true },
+          note: { type: 'string' },
+        },
+        render: () => [{ type: 'text', text: 'x' }],
+      },
+      execute: async () => ({ ok: true, note: 'x' }),
+    })
+    assert.deepEqual(findViolations(tool.output.schema, '$out'), [])
+    assert.deepEqual(tool.output.schema.required, ['ok'])
+  })
+})

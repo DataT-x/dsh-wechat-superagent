@@ -34,18 +34,6 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
-    },
-    "compatibility": {
-      "dsh": "0.2.2-rc.5",
-      "dshReleases": {
-        "0.2.1-rc.2": "compatible",
-        "0.2.2-rc.1": "compatible",
-        "0.2.2-rc.5": "compatible"
-      },
-      "profiles": [
-        "desktop",
-        "web"
-      ]
     }
   },
   "scripts": {

@@ -47,10 +47,7 @@ export function registerTools({ ctx, deps }) {
       connect: { type: 'boolean', description: 'Connect (or reconnect) right away. Defaults to true when credentials were supplied.' },
     },
     output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
+      properties: {
           ok: { type: 'boolean', required: true },
           configured: { type: 'boolean', required: true },
           online: { type: 'boolean', required: true },
@@ -60,7 +57,6 @@ export function registerTools({ ctx, deps }) {
           missing: { type: 'array', items: { type: 'string' } },
           message: { type: 'string', required: true },
         },
-      },
       render: (_args, value) => [{ type: 'text', text: value.message }],
     },
     isConcurrencySafe: () => false,
@@ -140,10 +136,7 @@ export function registerTools({ ctx, deps }) {
       + 'and recent refusals. Never includes the bot secret.',
     parameters: {},
     output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
+      properties: {
           online: { type: 'boolean', required: true },
           state: { type: 'string', required: true },
           botId: { type: 'string' },
@@ -152,7 +145,6 @@ export function registerTools({ ctx, deps }) {
           pendingApprovals: { type: 'integer', required: true },
           text: { type: 'string', required: true },
         },
-      },
       render: (_args, value) => [{ type: 'text', text: value.text }],
     },
     isConcurrencySafe: () => true,
@@ -198,15 +190,11 @@ export function registerTools({ ctx, deps }) {
       confirm: { type: 'boolean', description: 'Must be true.' },
     },
     output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
+      properties: {
           ok: { type: 'boolean', required: true },
           chatId: { type: 'string' },
           delivered: { type: 'string', required: true },
         },
-      },
       render: (_args, value) => [{ type: 'text', text: value.delivered }],
     },
     isConcurrencySafe: () => false,
@@ -250,15 +238,11 @@ export function registerTools({ ctx, deps }) {
       confirm: { type: 'boolean', description: 'Must be true.' },
     },
     output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
+      properties: {
           outcome: { type: 'string', required: true },
           approvalId: { type: 'string', required: true },
           note: { type: 'string', required: true },
         },
-      },
       render: (_args, value) => [{ type: 'text', text: value.note }],
     },
     isConcurrencySafe: () => false,
@@ -319,14 +303,10 @@ export function registerTools({ ctx, deps }) {
       sessionId: { type: 'string', description: 'Only show requests raised from this session.' },
     },
     output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
+      properties: {
           count: { type: 'integer', required: true },
           text: { type: 'string', required: true },
         },
-      },
       render: (_args, value) => [{ type: 'text', text: value.text }],
     },
     isConcurrencySafe: () => true,
@@ -356,14 +336,10 @@ export function registerTools({ ctx, deps }) {
       confirm: { type: 'boolean', description: 'Must be true.' },
     },
     output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
+      properties: {
           ok: { type: 'boolean', required: true },
           text: { type: 'string', required: true },
         },
-      },
       render: (_args, value) => [{ type: 'text', text: value.text }],
     },
     isConcurrencySafe: () => false,
@@ -396,15 +372,11 @@ export function registerTools({ ctx, deps }) {
       confirm: { type: 'boolean', description: 'Must be true for add/remove.' },
     },
     output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
+      properties: {
           ok: { type: 'boolean', required: true },
           count: { type: 'integer', required: true },
           text: { type: 'string', required: true },
         },
-      },
       render: (_args, value) => [{ type: 'text', text: value.text }],
     },
     isConcurrencySafe: () => false,
@@ -458,10 +430,7 @@ export function registerTools({ ctx, deps }) {
       path: { type: 'string', description: 'Directory to inspect; defaults to the session working directory.' },
     },
     output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
+      properties: {
           isRepo: { type: 'boolean', required: true },
           repo: { type: 'string' },
           branch: { type: 'string' },
@@ -469,7 +438,6 @@ export function registerTools({ ctx, deps }) {
           dirty: { type: 'integer', required: true },
           text: { type: 'string', required: true },
         },
-      },
       render: (_args, value) => [{ type: 'text', text: value.text }],
     },
     isConcurrencySafe: () => true,
@@ -504,14 +472,10 @@ export function registerTools({ ctx, deps }) {
       limit: { type: 'integer', description: 'How many records (default 20, max 200).' },
     },
     output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
+      properties: {
           count: { type: 'integer', required: true },
           text: { type: 'string', required: true },
         },
-      },
       render: (_args, value) => [{ type: 'text', text: value.text }],
     },
     isConcurrencySafe: () => true,
