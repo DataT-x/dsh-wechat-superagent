@@ -47,7 +47,13 @@ const DEFAULT_MESSAGE = [
   '',
   'Co-Authored-By: Claude Code <noreply@anthropic.com>',
 ].join(String.fromCharCode(10))
+// 提交信息里不能出现「反斜杠 + n」这两个字符：GitHub 会原样保存。
+// 统一换成真正的换行。
+const NEWLINE = String.fromCharCode(10)
+const BACKSLASH = String.fromCharCode(92)
 const message = arg('message', DEFAULT_MESSAGE)
+  .split(BACKSLASH + 'n').join(NEWLINE)
+  .split(BACKSLASH + 'r').join('')
 
 function getToken() {
   if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN.trim()
